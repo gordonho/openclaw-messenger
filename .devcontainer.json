@@ -1,0 +1,12 @@
+{
+  "name": "OpenClaw Messenger",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "customizations": {
+    "codespaces": {
+      "openFiles": ["app.py"]
+    }
+  },
+  "postCreateCommand": "pip install flask",
+  "runArgs": ["--port", "5001"],
+  "forwardPorts": [5001]
+}
