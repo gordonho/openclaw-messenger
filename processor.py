@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-OpenClaw 文件中转处理器 - 使用 OpenClaw CLI
-读取 inbox.json，通过 openclaw agent 命令发送消息给 OpenClaw
+OpenClaw 文件中转处理器 - 使用 imsg 直接发送
+读取 inbox.json，通过 imsg 发送到对应的 iMessage 账号
 """
 
 import os
@@ -14,7 +14,6 @@ from datetime import datetime
 INBOX_FILE = '/tmp/openclaw_inbox.json'
 OUTBOX_FILE = '/tmp/openclaw_outbox.json'
 POLL_INTERVAL = 2
-OPENCLAW_BIN = os.environ.get('OPENCLAW_BIN', '/Users/gordon/.nvm/versions/node/v22.12.0/bin/openclaw')
 
 def read_json_file(filepath, default=[]):
     if os.path.exists(filepath):
@@ -29,21 +28,14 @@ def write_json_file(filepath, data):
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-def send_via_openclaw(message: str, target: str = "hgdemail@icloud.com") -> bool:
-    """通过 OpenClaw CLI 发送消息"""
+def send_via_imsg(message: str, target: str = "hgdemail@icloud.com") -> bool:
+    """通过 imsg 直接发送消息"""
     try:
         result = subprocess.run(
-            [
-                OPENCLAW_BIN, 
-                "agent",
-                "--channel", "imessage",
-                "--to", target,
-                "--message", message,
-                "--deliver"
-            ],
+            ["imsg", "send", "--to", target, "--text", message],
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=30
         )
         return result.returncode == 0
     except Exception as e:
@@ -51,9 +43,8 @@ def send_via_openclaw(message: str, target: str = "hgdemail@icloud.com") -> bool
         return False
 
 def main():
-    print("📬 OpenClaw 文件中转处理器 (CLI版) 启动")
+    print("📬 OpenClaw 文件中转处理器 (imsg版) 启动")
     print(f"📂 监听: {INBOX_FILE}")
-    print(f"🔧 CLI: {OPENCLAW_BIN}")
     print("-" * 40)
     
     processed_ids = set()
@@ -64,15 +55,17 @@ def main():
             
             for msg in inbox:
                 msg_id = msg.get('id')
+                target = msg.get('target', 'hgdemail@icloud.com')
+                
                 if msg_id and msg_id not in processed_ids and msg.get('status') == 'pending':
                     content = msg.get('content', '')
                     
-                    # 通过 OpenClaw CLI 发送
-                    if send_via_openclaw(content):
-                        print(f"✅ 已发送: {content[:30]}...")
+                    # 使用 imsg 发送
+                    if send_via_imsg(content, target):
+                        print(f"✅ 已发送 to {target}: {content[:30]}...")
                         msg['status'] = 'sent_to_openclaw'
                     else:
-                        print(f"❌ 发送失败: {content[:30]}...")
+                        print(f"❌ 发送失败 to {target}: {content[:30]}...")
                         msg['status'] = 'failed'
                     
                     processed_ids.add(msg_id)

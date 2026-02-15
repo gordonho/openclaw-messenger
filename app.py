@@ -40,12 +40,13 @@ def write_json_file(filepath, data):
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-def add_to_inbox(message):
+def add_to_inbox(message, target='hgdemail@icloud.com'):
     """添加消息到收件箱"""
     inbox = read_json_file(INBOX_FILE, [])
     inbox.insert(0, {
         'id': f"msg_{int(time.time()*1000)}",
         'content': message,
+        'target': target,  # 目标用户
         'timestamp': datetime.now().isoformat(),
         'status': 'pending'
     })
@@ -69,12 +70,13 @@ MESSAGES_FILE = os.path.expanduser('~/.openclaw/web_messages.json')
 def load_messages():
     return read_json_file(MESSAGES_FILE, [])
 
-def save_message(msg_type, content, status="sent"):
+def save_message(msg_type, content, status="sent", target=""):
     messages = load_messages()
     messages.insert(0, {
         'type': msg_type,
         'content': content,
         'status': status,
+        'target': target,
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     })
     messages = messages[:100]
@@ -89,27 +91,40 @@ def index():
 
 @app.route('/api/send', methods=['POST'])
 def send_message():
-    """发送消息到 OpenClaw"""
+    """发送消息到 OpenClaw - 直接通过 imsg 发送"""
+    import subprocess
+    
     data = request.get_json()
     message = data.get('message', '').strip()
+    target = data.get('target', '').strip() or 'hgdemail@icloud.com'
     
     if not message:
         return jsonify({"success": False, "error": "消息不能为空"})
     
-    # 写入收件箱
-    add_to_inbox(message)
+    # 直接通过 imsg 发送
+    try:
+        result = subprocess.run(
+            ["imsg", "send", "--to", target, "--text", message],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode == 0:
+            status_msg = "已发送"
+        else:
+            status_msg = "失败: " + (result.stderr or "未知错误")
+    except Exception as e:
+        status_msg = "错误: " + str(e)
     
     # 保存到历史
-    save_message("sent", message, "已发送")
+    save_message("sent", message, status_msg, target)
     
     # 通知前端
     socketio.emit('new_message', {
         'type': 'sent',
         'content': message,
-        'status': '已发送'
+        'status': status_msg
     })
     
-    return jsonify({"success": True, "message": "消息已添加到队列"})
+    return jsonify({"success": result.returncode == 0, "message": status_msg, "target": target})
 
 @app.route('/api/poll', methods=['GET'])
 def poll_messages():
@@ -119,7 +134,17 @@ def poll_messages():
 
 @app.route('/api/messages', methods=['GET'])
 def get_messages():
-    return jsonify(load_messages())
+    """获取当前用户的消息历史"""
+    user = request.args.get('user', '')
+    all_messages = load_messages()
+    
+    if user:
+        # 过滤当前用户的消息
+        messages = [m for m in all_messages if m.get('target') == user or m.get('user') == user]
+    else:
+        messages = all_messages
+    
+    return jsonify(messages)
 
 @app.route('/api/status', methods=['GET'])
 def status():

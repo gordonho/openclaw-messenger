@@ -55,6 +55,36 @@
         .status-dot.connected { background: #4ade80; }
         .status-dot.disconnected { background: #f87171; }
         
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px 30px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .user-info input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .user-info input:focus { border-color: #2a5298; }
+        
+        .user-info button {
+            padding: 10px 20px;
+            background: #2a5298;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
         .chat-area {
             height: 400px;
             overflow-y: auto;
@@ -103,12 +133,6 @@
             text-align: right;
         }
         
-        .message.error .message-bubble {
-            background: #fef2f2;
-            color: #dc2626;
-            border: 1px solid #fecaca;
-        }
-        
         .input-area {
             padding: 20px 30px;
             background: white;
@@ -127,7 +151,6 @@
             border-radius: 25px;
             font-size: 15px;
             outline: none;
-            transition: border-color 0.3s;
         }
         
         .input-form input:focus { border-color: #2a5298; }
@@ -141,18 +164,11 @@
             font-size: 15px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        
-        .input-form button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(42, 82, 152, 0.4);
         }
         
         .input-form button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-            transform: none;
         }
         
         .empty-state {
@@ -168,21 +184,56 @@
             opacity: 0.5;
         }
         
-        .info-banner {
-            background: #fff7ed;
-            border: 1px solid #fed7aa;
-            color: #c2410c;
-            padding: 12px 20px;
-            font-size: 13px;
+        .login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
             text-align: center;
+            max-width: 400px;
+        }
+        
+        .login-box h2 {
+            margin-bottom: 20px;
+            color: #1e3c72;
+        }
+        
+        .login-box input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .login-box button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
         }
         
         @media (max-width: 600px) {
             body { padding: 10px; }
             .header { padding: 20px; }
-            .header h1 { font-size: 18px; }
             .chat-area { height: 300px; }
-            .input-area { padding: 15px 20px; }
         }
     </style>
 </head>
@@ -197,8 +248,10 @@
                 </div>
             </div>
             
-            <div class="info-banner" id="infoBanner">
-                📍 Gateway: {{ gateway_url }}
+            <div class="user-info" id="userInfo">
+                <span>👤</span>
+                <input type="text" id="userId" placeholder="输入你的 iMessage 账号（如 your@icloud.com）">
+                <button onclick="setUser()">设置</button>
             </div>
             
             <div class="chat-area" id="chatArea">
@@ -221,6 +274,11 @@
     </div>
     
     <script>
+        // 用户ID
+        let currentUser = localStorage.getItem('openclaw_user') || '';
+        let userTargets = JSON.parse(localStorage.getItem('openclaw_targets') || '{}');
+        
+        // DOM 元素
         const socket = io();
         const chatArea = document.getElementById('chatArea');
         const messagesList = document.getElementById('messagesList');
@@ -230,45 +288,49 @@
         const sendBtn = document.getElementById('sendBtn');
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
+        const userIdInput = document.getElementById('userId');
         
-        // 检查连接状态
+        // 初始化用户
+        if (currentUser) {
+            userIdInput.value = currentUser;
+            document.getElementById('userInfo').style.display = 'none';
+        }
+        
+        // 设置用户
+        function setUser() {
+            const userId = userIdInput.value.trim();
+            if (!userId) return alert('请输入账号');
+            
+            currentUser = userId;
+            localStorage.setItem('openclaw_user', userId);
+            document.getElementById('userInfo').style.display = 'none';
+        }
+        
+        // 检查状态
         async function checkStatus() {
             try {
                 const res = await fetch('/api/status');
                 const data = await res.json();
-                statusDot.className = 'status-dot ' + data.status;
-                statusText.textContent = data.status === 'connected' ? '已连接' : '未连接';
-                if (data.error) {
-                    document.getElementById('infoBanner').textContent = '⚠️ ' + (data.error || data.hint || '无法连接Gateway');
-                }
+                statusDot.className = 'status-dot ' + (data.status === 'running' ? 'connected' : 'disconnected');
+                statusText.textContent = data.status === 'running' ? '已连接' : '未连接';
             } catch (e) {
                 statusDot.className = 'status-dot disconnected';
                 statusText.textContent = '错误';
             }
         }
-        
         checkStatus();
-        
-        // WebSocket
-        socket.on('connect', () => {
-            statusDot.className = 'status-dot connected';
-            statusText.textContent = '已连接';
-        });
-        
-        socket.on('disconnect', () => {
-            statusDot.className = 'status-dot disconnected';
-            statusText.textContent = '已断开';
-        });
-        
-        socket.on('new_message', (data) => {
-            addMessage(data.type, data.content, data.status);
-        });
         
         // 发送消息
         messageForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const message = messageInput.value.trim();
             if (!message) return;
+            
+            // 检查是否设置用户
+            if (!currentUser) {
+                alert('请先设置你的 iMessage 账号');
+                return;
+            }
             
             sendBtn.disabled = true;
             sendBtn.textContent = '发送中...';
@@ -277,27 +339,29 @@
                 const response = await fetch('/api/send', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ message })
+                    body: JSON.stringify({ 
+                        message,
+                        target: currentUser  // 发送给自己
+                    })
                 });
                 const result = await response.json();
                 
                 if (result.success) {
                     messageInput.value = '';
                 } else {
-                    addMessage('sent', message, '失败: ' + (result.error || '未知错误'));
+                    alert('发送失败: ' + (result.error || '未知错误'));
                 }
             } catch (error) {
-                addMessage('sent', message, '失败: ' + error.message);
+                alert('网络错误: ' + error.message);
             } finally {
                 sendBtn.disabled = false;
                 sendBtn.textContent = '发送';
             }
         });
         
-        // 添加消息（防止重复）
+        // 添加消息
         const addedMessages = new Set();
         function addMessage(type, content, status = '') {
-            // 检查是否已存在
             const key = `${type}-${content}`;
             if (addedMessages.has(key)) return;
             addedMessages.add(key);
@@ -305,8 +369,7 @@
             emptyState.style.display = 'none';
             
             const div = document.createElement('div');
-            const isError = status && status.includes('失败');
-            div.className = `message ${type}${isError ? ' error' : ''}`;
+            div.className = `message ${type}`;
             div.innerHTML = `
                 <div class="message-bubble">
                     ${escapeHtml(content)}
@@ -315,7 +378,7 @@
                 </div>
             `;
             messagesList.appendChild(div);
-            chatArea.scrollTop = chatArea.scrollHeight;  // 滚动到最底
+            chatArea.scrollTop = chatArea.scrollHeight;
         }
         
         function escapeHtml(text) {
@@ -324,42 +387,31 @@
             return div.innerHTML;
         }
         
-        // 加载历史消息 - 按时间正序（最早的在前，最新的在后）
+        // 加载消息
         let lastMessageCount = 0;
         async function loadMessages() {
             try {
-                const response = await fetch('/api/messages');
+                const response = await fetch('/api/messages?user=' + encodeURIComponent(currentUser));
                 const messages = await response.json();
                 
-                // 如果消息数量没变，不重新渲染（防止闪烁）
                 if (messages.length === lastMessageCount) return;
                 lastMessageCount = messages.length;
                 
-                if (messages && messages.length > 0) {
+                if (messages.length > 0) {
                     emptyState.style.display = 'none';
-                    messagesList.innerHTML = '';  // 清空现有消息
-                    
-                    // 按时间正序排序（ oldest first, newest last）
+                    messagesList.innerHTML = '';
                     messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-                    
-                    messages.forEach(msg => {
-                        addMessage(msg.type, msg.content, msg.status);
-                    });
-                    
-                    // 滚动到最底（最新消息）
-                    chatArea.scrollTop = chatArea.scrollHeight;
+                    messages.forEach(msg => addMessage(msg.type, msg.content, msg.status));
                 }
             } catch (e) {
                 console.error('加载消息失败:', e);
             }
         }
         
-        // 页面加载时获取历史消息
-        loadMessages();
-        
-        // 定时轮询获取新消息
-        setInterval(async () => {
-            await loadMessages();  // 直接调用 loadMessages 检查新消息
+        // 定时轮询
+        if (currentUser) loadMessages();
+        setInterval(() => {
+            if (currentUser) loadMessages();
         }, 3000);
     </script>
 </body>
