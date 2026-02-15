@@ -3,232 +3,209 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenClaw 消息发送</title>
+    <title>OpenClaw Web Messenger</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             min-height: 100vh;
             padding: 20px;
         }
         
         .container {
-            max-width: 600px;
+            max-width: 800px;
             margin: 0 auto;
         }
         
         .card {
             background: white;
-            border-radius: 16px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             overflow: hidden;
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             color: white;
-            padding: 30px;
-            text-align: center;
+            padding: 25px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
         .header h1 {
-            font-size: 24px;
+            font-size: 22px;
             font-weight: 600;
-            margin-bottom: 8px;
         }
         
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
         }
         
-        .form-section {
-            padding: 30px;
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
         }
         
-        .form-group {
-            margin-bottom: 20px;
+        .status-dot.connected { background: #4ade80; }
+        .status-dot.disconnected { background: #f87171; }
+        
+        .chat-area {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8fafc;
         }
         
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: #333;
-            font-size: 14px;
+        .message {
+            display: flex;
+            margin-bottom: 16px;
+            animation: fadeIn 0.3s ease;
         }
         
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-            width: 100%;
-            padding: 12px 16px;
-            border: 2px solid #e8e8e8;
-            border-radius: 10px;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message.sent {
+            justify-content: flex-end;
+        }
+        
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 18px;
             font-size: 15px;
-            transition: all 0.3s;
-            font-family: inherit;
+            line-height: 1.5;
         }
         
-        .form-group input:focus,
-        .form-group select:focus,
-        .form-group textarea:focus {
+        .message.sent .message-bubble {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .message.received .message-bubble {
+            background: white;
+            color: #333;
+            border: 1px solid #e2e8f0;
+            border-bottom-left-radius: 4px;
+        }
+        
+        .message-time {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 4px;
+            text-align: right;
+        }
+        
+        .input-area {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e2e8f0;
+        }
+        
+        .input-form {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .input-form input {
+            flex: 1;
+            padding: 14px 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 25px;
+            font-size: 15px;
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            transition: border-color 0.3s;
         }
         
-        .form-group textarea {
-            min-height: 120px;
-            resize: vertical;
+        .input-form input:focus {
+            border-color: #2a5298;
         }
         
-        .btn {
-            width: 100%;
-            padding: 14px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .input-form button {
+            padding: 14px 30px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             color: white;
             border: none;
-            border-radius: 10px;
-            font-size: 16px;
+            border-radius: 25px;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
         
-        .btn:hover {
+        .input-form button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 6px 20px rgba(42, 82, 152, 0.4);
         }
         
-        .btn:active {
-            transform: translateY(0);
-        }
-        
-        .btn:disabled {
+        .input-form button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
         }
         
-        .result {
-            margin-top: 20px;
-            padding: 16px;
-            border-radius: 10px;
-            display: none;
-        }
-        
-        .result.success {
-            display: block;
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .result.error {
-            display: block;
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .history-section {
-            border-top: 1px solid #eee;
-            padding: 30px;
-        }
-        
-        .history-section h2 {
-            font-size: 18px;
-            color: #333;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .history-list {
-            list-style: none;
-        }
-        
-        .history-item {
-            padding: 16px;
-            border-radius: 10px;
-            margin-bottom: 12px;
-            background: #f8f9fa;
-            transition: all 0.3s;
-        }
-        
-        .history-item:hover {
-            background: #f0f0f0;
-        }
-        
-        .history-message {
-            color: #333;
-            font-size: 15px;
-            margin-bottom: 8px;
-            word-break: break-word;
-        }
-        
-        .history-meta {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            color: #888;
-        }
-        
-        .history-status {
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 500;
-        }
-        
-        .history-status.success {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .history-status.fail {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        
         .empty-state {
             text-align: center;
-            padding: 40px;
-            color: #999;
+            padding: 60px 20px;
+            color: #94a3b8;
         }
         
         .empty-state svg {
-            width: 60px;
-            height: 60px;
-            margin-bottom: 16px;
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
             opacity: 0.5;
         }
         
-        @media (max-width: 480px) {
-            body {
-                padding: 10px;
-            }
-            
-            .header {
-                padding: 20px;
-            }
-            
-            .header h1 {
-                font-size: 20px;
-            }
-            
-            .form-section,
-            .history-section {
-                padding: 20px;
-            }
+        .history-section {
+            padding: 20px 30px;
+            border-top: 1px solid #e2e8f0;
+        }
+        
+        .history-section h3 {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 15px;
+        }
+        
+        .history-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .history-item {
+            padding: 8px 14px;
+            background: #f1f5f9;
+            border-radius: 20px;
+            font-size: 13px;
+            color: #475569;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .history-item:hover {
+            background: #e2e8f0;
+        }
+        
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .header { padding: 20px; }
+            .header h1 { font-size: 18px; }
+            .chat-area { height: 300px; }
+            .input-area { padding: 15px 20px; }
         }
     </style>
 </head>
@@ -236,128 +213,145 @@
     <div class="container">
         <div class="card">
             <div class="header">
-                <h1>📬 OpenClaw 消息发送</h1>
-                <p>发送消息到你的 OpenClaw 助手</p>
+                <h1>🤖 OpenClaw Web Messenger</h1>
+                <div class="status">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">连接中...</span>
+                </div>
             </div>
             
-            <div class="form-section">
-                <form id="messageForm">
-                    <div class="form-group">
-                        <label for="message">消息内容</label>
-                        <textarea id="message" name="message" placeholder="输入你想发送的消息..." required></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="channel">发送渠道</label>
-                        <select id="channel" name="channel">
-                            <option value="imessage">iMessage</option>
-                            <option value="telegram">Telegram</option>
-                            <option value="whatsapp">WhatsApp</option>
-                            <option value="discord">Discord</option>
-                            <option value="signal">Signal</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="target">发送到（可选）</label>
-                        <input type="text" id="target" name="target" placeholder="留空发送给默认联系人">
-                    </div>
-                    
-                    <button type="submit" class="btn" id="submitBtn">发送消息</button>
+            <div class="chat-area" id="chatArea">
+                <div class="empty-state" id="emptyState">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <p>发送消息开始对话</p>
+                </div>
+                <div id="messagesList"></div>
+            </div>
+            
+            <div class="input-area">
+                <form class="input-form" id="messageForm">
+                    <input type="text" id="messageInput" placeholder="输入消息..." autocomplete="off">
+                    <button type="submit" id="sendBtn">发送</button>
                 </form>
-                
-                <div class="result" id="result"></div>
             </div>
             
             <div class="history-section">
-                <h2>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <polyline points="12 6 12 12 16 14"></polyline>
-                    </svg>
-                    发送历史
-                </h2>
-                <div id="historyList">
-                    {% if history %}
-                        <ul class="history-list">
-                        {% for item in history %}
-                            <li class="history-item">
-                                <div class="history-message">{{ item.message }}</div>
-                                <div class="history-meta">
-                                    <span>{{ item.channel }} · {{ item.timestamp }}</span>
-                                    <span class="history-status {{ 'success' if item.status == '成功' else 'fail' }}">{{ item.status }}</span>
-                                </div>
-                            </li>
-                        {% endfor %}
-                        </ul>
-                    {% else %}
-                        <div class="empty-state">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                            </svg>
-                            <p>暂无发送记录</p>
-                        </div>
-                    {% endif %}
+                <h3>📜 最近消息</h3>
+                <div class="history-list" id="historyList">
+                    {% for msg in messages[:10] %}
+                    <span class="history-item" onclick="fillMessage('{{ msg.content }}')">{{ msg.content[:30] }}...</span>
+                    {% endfor %}
                 </div>
             </div>
         </div>
     </div>
     
     <script>
-        const form = document.getElementById('messageForm');
-        const result = document.getElementById('result');
-        const submitBtn = document.getElementById('submitBtn');
+        const socket = io();
+        const chatArea = document.getElementById('chatArea');
+        const messagesList = document.getElementById('messagesList');
+        const emptyState = document.getElementById('emptyState');
+        const messageForm = document.getElementById('messageForm');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
         
-        form.addEventListener('submit', async (e) => {
+        // WebSocket 连接状态
+        socket.on('connect', () => {
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = '已连接';
+        });
+        
+        socket.on('disconnect', () => {
+            statusDot.className = 'status-dot disconnected';
+            statusText.textContent = '已断开';
+        });
+        
+        // 接收新消息
+        socket.on('new_message', (data) => {
+            addMessage(data.type, data.content, data.status);
+        });
+        
+        // 发送消息
+        messageForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            const message = messageInput.value.trim();
+            if (!message) return;
             
-            const message = document.getElementById('message').value;
-            const channel = document.getElementById('channel').value;
-            const target = document.getElementById('target').value;
-            
-            if (!message.trim()) {
-                showResult('请输入消息内容', false);
-                return;
-            }
-            
-            // 禁用按钮
-            submitBtn.disabled = true;
-            submitBtn.textContent = '发送中...';
-            result.className = 'result';
-            result.style.display = 'none';
+            sendBtn.disabled = true;
+            sendBtn.textContent = '发送中...';
             
             try {
                 const response = await fetch('/api/send', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ message, channel, target })
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ message })
                 });
+                const result = await response.json();
                 
-                const data = await response.json();
-                
-                if (data.success) {
-                    showResult('✅ 消息发送成功！', true);
-                    form.reset();
-                    // 刷新历史记录
-                    setTimeout(() => location.reload(), 1000);
+                if (result.success) {
+                    messageInput.value = '';
                 } else {
-                    showResult('❌ 发送失败: ' + (data.error || '未知错误'), false);
+                    alert('发送失败: ' + (result.error || '未知错误'));
                 }
             } catch (error) {
-                showResult('❌ 网络错误: ' + error.message, false);
+                alert('网络错误: ' + error.message);
             } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = '发送消息';
+                sendBtn.disabled = false;
+                sendBtn.textContent = '发送';
             }
         });
         
-        function showResult(message, isSuccess) {
-            result.textContent = message;
-            result.className = 'result ' + (isSuccess ? 'success' : 'error');
-            result.style.display = 'block';
+        // 添加消息到界面
+        function addMessage(type, content, status = '') {
+            emptyState.style.display = 'none';
+            
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.innerHTML = `
+                <div class="message-bubble">
+                    ${escapeHtml(content)}
+                    <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                </div>
+            `;
+            messagesList.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
         }
+        
+        // 转义 HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 从历史填充消息
+        function fillMessage(msg) {
+            messageInput.value = msg;
+            messageInput.focus();
+        }
+        
+        // 加载历史消息
+        async function loadMessages() {
+            try {
+                const response = await fetch('/api/messages');
+                const messages = await response.json();
+                
+                if (messages.length > 0) {
+                    emptyState.style.display = 'none';
+                    messages.forEach(msg => {
+                        addMessage(msg.type, msg.content, msg.status);
+                    });
+                }
+            } catch (e) {
+                console.error('加载消息失败:', e);
+            }
+        }
+        
+        loadMessages();
     </script>
 </body>
 </html>
