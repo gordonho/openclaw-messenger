@@ -36,10 +36,7 @@
             align-items: center;
         }
         
-        .header h1 {
-            font-size: 22px;
-            font-weight: 600;
-        }
+        .header h1 { font-size: 22px; font-weight: 600; }
         
         .status {
             display: flex;
@@ -76,9 +73,7 @@
             to { opacity: 1; transform: translateY(0); }
         }
         
-        .message.sent {
-            justify-content: flex-end;
-        }
+        .message.sent { justify-content: flex-end; }
         
         .message-bubble {
             max-width: 70%;
@@ -108,6 +103,12 @@
             text-align: right;
         }
         
+        .message.error .message-bubble {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+        
         .input-area {
             padding: 20px 30px;
             background: white;
@@ -129,9 +130,7 @@
             transition: border-color 0.3s;
         }
         
-        .input-form input:focus {
-            border-color: #2a5298;
-        }
+        .input-form input:focus { border-color: #2a5298; }
         
         .input-form button {
             padding: 14px 30px;
@@ -169,35 +168,13 @@
             opacity: 0.5;
         }
         
-        .history-section {
-            padding: 20px 30px;
-            border-top: 1px solid #e2e8f0;
-        }
-        
-        .history-section h3 {
-            font-size: 14px;
-            color: #64748b;
-            margin-bottom: 15px;
-        }
-        
-        .history-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-        
-        .history-item {
-            padding: 8px 14px;
-            background: #f1f5f9;
-            border-radius: 20px;
+        .info-banner {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            color: #c2410c;
+            padding: 12px 20px;
             font-size: 13px;
-            color: #475569;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        
-        .history-item:hover {
-            background: #e2e8f0;
+            text-align: center;
         }
         
         @media (max-width: 600px) {
@@ -216,8 +193,12 @@
                 <h1>🤖 OpenClaw Web Messenger</h1>
                 <div class="status">
                     <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">连接中...</span>
+                    <span id="statusText">检查中...</span>
                 </div>
+            </div>
+            
+            <div class="info-banner" id="infoBanner">
+                📍 Gateway: {{ gateway_url }}
             </div>
             
             <div class="chat-area" id="chatArea">
@@ -236,15 +217,6 @@
                     <button type="submit" id="sendBtn">发送</button>
                 </form>
             </div>
-            
-            <div class="history-section">
-                <h3>📜 最近消息</h3>
-                <div class="history-list" id="historyList">
-                    {% for msg in messages[:10] %}
-                    <span class="history-item" onclick="fillMessage('{{ msg.content }}')">{{ msg.content[:30] }}...</span>
-                    {% endfor %}
-                </div>
-            </div>
         </div>
     </div>
     
@@ -259,7 +231,25 @@
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         
-        // WebSocket 连接状态
+        // 检查连接状态
+        async function checkStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                statusDot.className = 'status-dot ' + data.status;
+                statusText.textContent = data.status === 'connected' ? '已连接' : '未连接';
+                if (data.error) {
+                    document.getElementById('infoBanner').textContent = '⚠️ ' + (data.error || data.hint || '无法连接Gateway');
+                }
+            } catch (e) {
+                statusDot.className = 'status-dot disconnected';
+                statusText.textContent = '错误';
+            }
+        }
+        
+        checkStatus();
+        
+        // WebSocket
         socket.on('connect', () => {
             statusDot.className = 'status-dot connected';
             statusText.textContent = '已连接';
@@ -270,7 +260,6 @@
             statusText.textContent = '已断开';
         });
         
-        // 接收新消息
         socket.on('new_message', (data) => {
             addMessage(data.type, data.content, data.status);
         });
@@ -295,25 +284,27 @@
                 if (result.success) {
                     messageInput.value = '';
                 } else {
-                    alert('发送失败: ' + (result.error || '未知错误'));
+                    addMessage('sent', message, '失败: ' + (result.error || '未知错误'));
                 }
             } catch (error) {
-                alert('网络错误: ' + error.message);
+                addMessage('sent', message, '失败: ' + error.message);
             } finally {
                 sendBtn.disabled = false;
                 sendBtn.textContent = '发送';
             }
         });
         
-        // 添加消息到界面
+        // 添加消息
         function addMessage(type, content, status = '') {
             emptyState.style.display = 'none';
             
             const div = document.createElement('div');
-            div.className = `message ${type}`;
+            const isError = status && status.includes('失败');
+            div.className = `message ${type}${isError ? ' error' : ''}`;
             div.innerHTML = `
                 <div class="message-bubble">
                     ${escapeHtml(content)}
+                    ${status ? `<div class="message-time">${status}</div>` : ''}
                     <div class="message-time">${new Date().toLocaleTimeString()}</div>
                 </div>
             `;
@@ -321,37 +312,11 @@
             chatArea.scrollTop = chatArea.scrollHeight;
         }
         
-        // 转义 HTML
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
-        
-        // 从历史填充消息
-        function fillMessage(msg) {
-            messageInput.value = msg;
-            messageInput.focus();
-        }
-        
-        // 加载历史消息
-        async function loadMessages() {
-            try {
-                const response = await fetch('/api/messages');
-                const messages = await response.json();
-                
-                if (messages.length > 0) {
-                    emptyState.style.display = 'none';
-                    messages.forEach(msg => {
-                        addMessage(msg.type, msg.content, msg.status);
-                    });
-                }
-            } catch (e) {
-                console.error('加载消息失败:', e);
-            }
-        }
-        
-        loadMessages();
     </script>
 </body>
 </html>

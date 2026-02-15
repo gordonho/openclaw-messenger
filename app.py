@@ -4,19 +4,25 @@ OpenClaw Web Messenger - 模仿飞书插件与OpenClaw通信
 
 运行: python3 app.py
 访问: http://localhost:5001
+
+配置:
+- 本地运行: 默认连接 localhost:18789
+- 远程运行: 需要设置环境变量 OPENCLAW_URL
 """
 
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
 import os
 import json
-import asyncio
-import threading
 from datetime import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'openclaw-web-secret'
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# 配置
+GATEWAY_URL = os.environ.get('OPENCLAW_URL', 'http://localhost:18789')
+GATEWAY_TOKEN = os.environ.get('OPENCLAW_TOKEN', '')
 
 # 消息历史
 MESSAGES_FILE = os.path.expanduser('~/.openclaw/web_messages.json')
@@ -33,7 +39,7 @@ def load_messages():
 def save_message(msg_type, content, status="sent"):
     messages = load_messages()
     messages.insert(0, {
-        'type': msg_type,  # 'sent' or 'received'
+        'type': msg_type,
         'content': content,
         'status': status,
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -42,50 +48,35 @@ def save_message(msg_type, content, status="sent"):
     with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
-# 通过 OpenClaw REST API 发送消息
 def send_to_openclaw_via_api(message: str) -> dict:
-    """通过 Gateway API 发送消息到 OpenClaw 主会话"""
+    """通过 Gateway API 发送消息"""
     import urllib.request
-    import urllib.error
-    
-    gateway_url = os.environ.get('OPENCLAW_URL', 'http://localhost:18789')
-    gateway_token = os.environ.get('OPENCLAW_TOKEN', '')
-    
-    # 使用 sessions API 发送消息到主会话
-    data = {
-        "message": message
-    }
     
     headers = {'Content-Type': 'application/json'}
-    if gateway_token:
-        headers['Authorization'] = f'Bearer {gateway_token}'
+    if GATEWAY_TOKEN:
+        headers['Authorization'] = f'Bearer {GATEWAY_TOKEN}'
     
-    # 尝试多个 API 端点
+    data = json.dumps({"message": message}).encode('utf-8')
+    
     endpoints = [
-        f"{gateway_url}/api/sessions/main/send",
-        f"{gateway_url}/api/messages",
+        f"{GATEWAY_URL}/api/sessions/main/send",
+        f"{GATEWAY_URL}/api/messages",
     ]
     
     for endpoint in endpoints:
         try:
-            req = urllib.request.Request(
-                endpoint,
-                data=json.dumps(data).encode('utf-8'),
-                headers=headers,
-                method='POST'
-            )
-            with urllib.request.urlopen(req, timeout=10) as response:
+            req = urllib.request.Request(endpoint, data=data, headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=15) as response:
                 return {"success": True, "endpoint": endpoint}
         except Exception as e:
             continue
     
-    return {"success": False, "error": "无法连接到 OpenClaw Gateway"}
+    return {"success": False, "error": f"无法连接到 OpenClaw Gateway ({GATEWAY_URL})"}
 
-# 通过 imsg 发送（备用方案）
 def send_via_imessage(message: str) -> dict:
     """通过 iMessage 发送"""
     import subprocess
-    target = "hgdemail@icloud.com"
+    target = os.environ.get('IMESSAGE_TARGET', 'hgdemail@icloud.com')
     try:
         result = subprocess.run(
             ["imsg", "send", target, message],
@@ -94,14 +85,16 @@ def send_via_imessage(message: str) -> dict:
         if result.returncode == 0:
             return {"success": True, "method": "imessage"}
         else:
-            return {"success": False, "error": result.stderr}
+            return {"success": False, "error": result.stderr or "iMessage发送失败"}
+    except FileNotFoundError:
+        return {"success": False, "error": "imsg命令未找到（仅本地可用）"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 @app.route('/')
 def index():
     messages = load_messages()
-    return render_template('index.html', messages=messages)
+    return render_template('index.html', messages=messages, gateway_url=GATEWAY_URL)
 
 @app.route('/api/send', methods=['POST'])
 def send_message():
@@ -114,8 +107,8 @@ def send_message():
     # 尝试通过 API 发送
     result = send_to_openclaw_via_api(message)
     
+    # 如果失败，尝试 iMessage
     if not result.get("success"):
-        # 备用：通过 iMessage 发送
         result = send_via_imessage(message)
     
     # 保存消息记录
@@ -138,16 +131,18 @@ def get_messages():
 def get_status():
     """检查 OpenClaw 连接状态"""
     import urllib.request
-    
-    gateway_url = os.environ.get('OPENCLAW_URL', 'http://localhost:18789')
     try:
-        req = urllib.request.Request(f"{gateway_url}/api/health")
+        req = urllib.request.Request(f"{GATEWAY_URL}/api/health")
         with urllib.request.urlopen(req, timeout=5) as response:
-            return jsonify({"status": "connected", "url": gateway_url})
-    except:
-        return jsonify({"status": "disconnected", "url": gateway_url})
+            return jsonify({"status": "connected", "url": GATEWAY_URL})
+    except Exception as e:
+        return jsonify({
+            "status": "disconnected", 
+            "url": GATEWAY_URL,
+            "error": str(e),
+            "hint": "在远程环境需要配置 OPENCLAW_URL 环境变量"
+        })
 
-# WebSocket 事件
 @socketio.on('connect')
 def handle_connect():
     emit('connected', {'data': 'Connected to OpenClaw Web'})
@@ -160,7 +155,8 @@ if __name__ == '__main__':
     os.makedirs(os.path.join(os.path.dirname(__file__), 'templates'), exist_ok=True)
     
     print("🚀 OpenClaw Web Messenger 启动中...")
-    print("📍 访问 http://localhost:5001")
-    print("📡 WebSocket 已启用 - 支持实时消息")
+    print(f"📍 访问 http://localhost:5001")
+    print(f"🔗 Gateway: {GATEWAY_URL}")
+    print("📡 WebSocket 已启用")
     
     socketio.run(app, host='0.0.0.0', port=5001, debug=True)
