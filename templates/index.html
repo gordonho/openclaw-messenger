@@ -294,8 +294,14 @@
             }
         });
         
-        // 添加消息
+        // 添加消息（防止重复）
+        const addedMessages = new Set();
         function addMessage(type, content, status = '') {
+            // 检查是否已存在
+            const key = `${type}-${content}`;
+            if (addedMessages.has(key)) return;
+            addedMessages.add(key);
+            
             emptyState.style.display = 'none';
             
             const div = document.createElement('div');
@@ -309,7 +315,7 @@
                 </div>
             `;
             messagesList.appendChild(div);
-            chatArea.scrollTop = chatArea.scrollHeight;
+            chatArea.scrollTop = chatArea.scrollHeight;  // 滚动到最底
         }
         
         function escapeHtml(text) {
@@ -317,6 +323,44 @@
             div.textContent = text;
             return div.innerHTML;
         }
+        
+        // 加载历史消息 - 按时间正序（最早的在前，最新的在后）
+        let lastMessageCount = 0;
+        async function loadMessages() {
+            try {
+                const response = await fetch('/api/messages');
+                const messages = await response.json();
+                
+                // 如果消息数量没变，不重新渲染（防止闪烁）
+                if (messages.length === lastMessageCount) return;
+                lastMessageCount = messages.length;
+                
+                if (messages && messages.length > 0) {
+                    emptyState.style.display = 'none';
+                    messagesList.innerHTML = '';  // 清空现有消息
+                    
+                    // 按时间正序排序（ oldest first, newest last）
+                    messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    
+                    messages.forEach(msg => {
+                        addMessage(msg.type, msg.content, msg.status);
+                    });
+                    
+                    // 滚动到最底（最新消息）
+                    chatArea.scrollTop = chatArea.scrollHeight;
+                }
+            } catch (e) {
+                console.error('加载消息失败:', e);
+            }
+        }
+        
+        // 页面加载时获取历史消息
+        loadMessages();
+        
+        // 定时轮询获取新消息
+        setInterval(async () => {
+            await loadMessages();  // 直接调用 loadMessages 检查新消息
+        }, 3000);
     </script>
 </body>
 </html>
